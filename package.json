@@ -1,0 +1,48 @@
+{
+  "name": "dsh-monitor",
+  "version": "0.2.0",
+  "private": false,
+  "description": "L1 rule-based supervisor for DeepSeek Harness: injects one contextual reminder before an agent step when a discipline rule fires (silent when nothing fires)",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "rules.js",
+    "probe.js",
+    "locale/*.json",
+    "icon.svg",
+    "docs/DETAIL.md"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/likyyr/dsh-monitor.git"
+  },
+  "homepage": "https://github.com/likyyr/dsh-monitor#readme",
+  "bugs": {
+    "url": "https://github.com/likyyr/dsh-monitor/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "supervisor",
+    "agent-monitoring",
+    "rules"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.3"
+  }
+}

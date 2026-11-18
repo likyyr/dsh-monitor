@@ -1,0 +1,4 @@
+{
+  "name": "Monitor",
+  "description": "Checks the running session against a JSON rule list and injects one reminder before the next step when a rule fires (context injection, outside the chat area). Edit the list to change rules; no reinstall needed."
+}

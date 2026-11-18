@@ -1,0 +1,391 @@
+{
+  "version": 3,
+  "updated": "2026-11-18",
+  "note": "L1 监工规则清单。改这个文件即可增删改规则，插件下一个 step 自动重载，不用重装重启。v2 把事实收窄到「当前任务」并区分读写，修掉 v1 的历史消息误报。 | 2026-11-18：maxInjections=0 表示不限次数；D6 改用 replies.count（GUI 会话不发 QQ 也能判）；B5 加 once。",
+  "defaults": {
+    "cooldownMs": 1200000,
+    "maxInjections": 0,
+    "enabled": true
+  },
+  "factsHelp": {
+    "calls.total": "本次会话工具调用总数（全会话）",
+    "calls.byTool.<name>": "某工具调用次数，如 calls.byTool.workbrief",
+    "calls.sinceWrite": "距最近一次写文件的调用数",
+    "progress.exists/size/ageMin": "进度文件是否存在、字节数、多少分钟没更新",
+    "raw.count/totalBytes/maxBytes": "今日 _tmp/raw 文件数、总字节、最大单文件字节",
+    "elapsedMin": "本回合已进行分钟数",
+    "sinceQQMin": "距上次 qq_notify 的分钟数",
+    "date.crossedMidnight": "会话开始日是否与今天不同",
+    "text.userLast": "最近一条用户消息（当前任务）",
+    "text.userAll": "最近 5 条用户消息",
+    "text.commands": "最近 30 条命令",
+    "text.commandsWrite": "最近 20 条带写入动词的命令",
+    "text.writePaths": "最近 20 个 write/edit 的目标路径",
+    "text.assistant": "助手回复文本（最近部分）",
+    "hasTool": "是否调用过某工具，value 为工具名"
+  },
+  "rules": [
+    {
+      "id": "A1",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.userLast",
+            "op": "matches",
+            "value": "编表|台账|摊销|算量|报价|核量|文书|对账|结算|出个报告|写份|起草"
+          },
+          {
+            "fact": "cmd.workbrief",
+            "op": "==",
+            "value": 0
+          },
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 5
+          }
+        ]
+      },
+      "say": "A1：这条是业务活，但还没跑 workbrief。先跑再动。"
+    },
+    {
+      "id": "A4",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 20
+          },
+          {
+            "fact": "progress.exists",
+            "op": "==",
+            "value": false
+          }
+        ]
+      },
+      "say": "A4：调用 20 次了，还没有 _tmp\\进度-<今天>.md，先建。"
+    },
+    {
+      "id": "A5",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "progress.exists",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "progress.size",
+            "op": "<",
+            "value": 200
+          }
+        ]
+      },
+      "say": "A5：进度文件不到 200 字节，像应付的，补口径和下一步。"
+    },
+    {
+      "id": "B1",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.byTool.web_search",
+            "op": ">=",
+            "value": 3
+          },
+          {
+            "fact": "raw.count",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      "say": "B1：抓了几次外网还没往 _tmp\\raw 落盘。"
+    },
+    {
+      "id": "B2",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "raw.count",
+            "op": ">=",
+            "value": 2
+          },
+          {
+            "fact": "raw.maxBytes",
+            "op": "<",
+            "value": 100
+          }
+        ]
+      },
+      "say": "B2：raw 里都是空壳文件，等于没落。"
+    },
+    {
+      "id": "B3",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.sinceWrite",
+            "op": ">=",
+            "value": 15
+          }
+        ]
+      },
+      "say": "B3：连续 15 步没写任何文件了。"
+    },
+    {
+      "id": "B5",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 40
+          },
+          {
+            "not": {
+              "fact": "hasTool",
+              "value": "subagent"
+            }
+          }
+        ]
+      },
+      "say": "B5：40 次调用还没拆子代理，能不能并行？",
+      "once": true
+    },
+    {
+      "id": "B8",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 10
+          },
+          {
+            "fact": "progress.ageMin",
+            "op": ">",
+            "value": 25
+          }
+        ]
+      },
+      "say": "B8：进度文件 25 分钟没更新了。"
+    },
+    {
+      "id": "C2",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.commandsWrite",
+            "op": "matches",
+            "value": "check_[a-z_]+\\.py.*\\|\\|\\s*true|check_[a-z_]+\\.py.*2>\\$null"
+          }
+        ]
+      },
+      "say": "C2：门禁命令带 ||true 或吞错误，等于没跑。"
+    },
+    {
+      "id": "D1",
+      "sev": 0,
+      "when": {
+        "any": [
+          {
+            "fact": "text.commandsWrite",
+            "op": "matches",
+            "value": "rm\\s+-rf|rm\\s+-r\\s|git\\s+reset\\s+--hard|git\\s+checkout\\s+--\\s\\.|rmdir\\s+/s|del\\s+/f\\s+/s\\s+/q|Remove-Item.*-Recurse.*-Force"
+          }
+        ]
+      },
+      "say": "D1：危险命令，先确认目标路径再执行。"
+    },
+    {
+      "id": "D2",
+      "sev": 0,
+      "when": {
+        "all": [
+          {
+            "fact": "text.commandsWrite",
+            "op": "matches",
+            "value": "C:\\\\Windows|Program Files"
+          }
+        ]
+      },
+      "say": "D2：在写系统/配置目录，确认是不是真要改。"
+    },
+    {
+      "id": "D4",
+      "sev": 0,
+      "when": {
+        "all": [
+          {
+            "fact": "text.writePaths",
+            "op": "matches",
+            "value": "\\\\.dsh\\\\sessions"
+          }
+        ]
+      },
+      "say": "D4：在改会话日志文件，说明理由。"
+    },
+    {
+      "id": "D5",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "date.crossedMidnight",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "progress.exists",
+            "op": "==",
+            "value": false
+          }
+        ]
+      },
+      "say": "D5：跨天了，进度文件要按新日期建。"
+    },
+    {
+      "id": "D6",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 12
+          },
+          {
+            "fact": "replies.count",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      "say": "D6：接了活 12 次调用了还没吭声，先发一句。"
+    },
+    {
+      "id": "D7",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "cmd.qq_notify",
+            "op": ">=",
+            "value": 1
+          },
+          {
+            "fact": "sinceQQMin",
+            "op": ">",
+            "value": 25
+          }
+        ]
+      },
+      "say": "D7：25 分钟没报进度了。"
+    },
+    {
+      "id": "E3",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.assistant",
+            "op": "matches",
+            "value": "已生成|已完成|已交付|已保存"
+          },
+          {
+            "fact": "calls.byTool.present",
+            "op": "==",
+            "value": 0
+          },
+          {
+            "fact": "calls.byTool.qqbot_work_send_file",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      "say": "E3：说了交付，但没 present 也没发文件。"
+    },
+    {
+      "id": "E4",
+      "sev": 0,
+      "when": {
+        "all": [
+          {
+            "fact": "text.writePaths",
+            "op": "matches",
+            "value": "监工规则\\.json|dsh-monitor\\\\|discipline_audit\\.js"
+          }
+        ]
+      },
+      "say": "E4：正在改监管件本身，会留痕。"
+    },
+    {
+      "id": "F1",
+      "sev": 1,
+      "when": {
+        "any": [
+          {
+            "fact": "text.assistant",
+            "op": "matches",
+            "value": "我在催|你在等|时间紧|这轮已经好久|加快完成|赶一下|来不及了|先交付再说|赶进度|抓紧收口"
+          }
+        ]
+      },
+      "say": "F1：别用时间当理由——用户要的是复查不出错的件，不是快。慢在核上不算失误，快在嘴上才算。"
+    },
+    {
+      "id": "E5",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "claim.memory",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "memory.writes60",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      "say": "E5：你说记进卡了，可 memory 目录 60 分钟内没有任何 .md 变化 —— 先写再开口，带不出文件名就改成待做。"
+    },
+    {
+      "id": "E6",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "claim.run",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 10
+          },
+          {
+            "fact": "cmd.checkAny",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      "say": "E6：你说跑过 / 核过 / 门禁过了，这场会话里却没有任何验证脚本调用 —— 补跑，或把话改成待核。"
+    }
+  ]
+}

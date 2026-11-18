@@ -1,0 +1,11 @@
+# Loader patch for the dsh-monitor bundle.
+# Installs one Host row: the L1 supervisor plugin.
+- insert:
+    - id: dsh-monitor
+      name: 'dsh-monitor'
+      config:
+        enabled: true
+        rulesPath: '<插件目录>\rules\monitor-rules.json'
+        workspace: '<你的工作区>'
+        maxInjections: 0
+        cooldownMs: 1200000
