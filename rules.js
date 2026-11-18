@@ -54,6 +54,21 @@ export function flatten(facts, probe, now) {
   out['cmd.checkAny'] =
     (c.check_xlsx ?? 0) + (c.check_all_tables ?? 0) + (c.check_cost_links ?? 0) +
     (c.check_t89 ?? 0) + (c.fmt_check ?? 0) + (c.verify_workbook ?? 0) + (c.closure_check ?? 0)
+  const cn = facts.cmdNow ?? {}
+  out['cmdNow.checkAny'] =
+    (cn.check_xlsx ?? 0) + (cn.check_all_tables ?? 0) + (cn.check_cost_links ?? 0) +
+    (cn.check_t89 ?? 0) + (cn.fmt_check ?? 0) + (cn.verify_workbook ?? 0) + (cn.closure_check ?? 0)
+  // 进度文件是不是这一轮建的：别人会话上午写的进度文件不该替我消掉 A4
+  out['progress.byMe'] = Boolean(
+    probe.progress.exists && facts.firstUserAt && probe.progress.mtime >= facts.firstUserAt,
+  )
+  // 今日 raw 里有没有「这一轮」写的文件：别的会话上午落的盘，不能替我消掉 B1/B2
+  out['raw.byMe'] = Boolean(
+    facts.firstUserAt && (probe.raw?.todayFiles ?? []).some((f) => f.mtime >= facts.firstUserAt),
+  )
+  const memNames = probe.memory?.names ?? []
+  const claimed = facts['claim.memoryNames'] ?? []
+  out['claim.memoryUnbacked'] = claimed.filter((n) => !memNames.includes(n)).length
   return out
 }
 
@@ -66,6 +81,10 @@ export function readFact(flat, key) {
   if (key.startsWith('cmd.')) {
     const script = key.slice('cmd.'.length)
     return flat.cmd?.[script] ?? 0
+  }
+  if (key.startsWith('cmdNow.')) {
+    const script = key.slice('cmdNow.'.length)
+    return flat.cmdNow?.[script] ?? 0
   }
   return undefined
 }

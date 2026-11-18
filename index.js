@@ -62,6 +62,7 @@ export function collect(agent, limit = 1200) {
     'docx2pdf', 'closure_check', 'sysop_precheck', 'check_xlsx_style', 'dsh-restart',
   ]
   const cmdCounts = Object.create(null)
+  const cmdNowCounts = Object.create(null)
   const writeCmds = []
   const writePaths = []
   const asstParts = []
@@ -114,7 +115,12 @@ export function collect(agent, limit = 1200) {
         if (cmdParts.length < 30) cmdParts.push(commandText)
         if (writeCmds.length < 20 && isShellWrite) writeCmds.push(commandText.replace(BENIGN_REDIRECT, ' '))
         for (const key of SCRIPT_KEYS) {
-          if (commandText.includes(key)) cmdCounts[key] = (cmdCounts[key] ?? 0) + 1
+          if (commandText.includes(key)) {
+            cmdCounts[key] = (cmdCounts[key] ?? 0) + 1
+            // Only counts matter for "did you run it this turn": a run from an
+            // earlier turn must not keep a rule silent forever.
+            if (!seenUser) cmdNowCounts[key] = (cmdNowCounts[key] ?? 0) + 1
+          }
         }
       } else if (toolName === 'write' || toolName === 'edit' || toolName === 'apply_patch') {
         const target = typeof args === 'string' ? args : (args?.file_path ?? args?.path ?? '')
@@ -143,6 +149,7 @@ export function collect(agent, limit = 1200) {
   facts['calls.total'] = total
   facts['calls.sinceProgress'] = 0
   facts.cmd = cmdCounts
+  facts.cmdNow = cmdNowCounts
   facts['cmd.qq_notify'] = cmdCounts.qq_notify ?? 0
   facts['text.userLast'] = facts.userLast ?? ''
   facts['text.commandsWrite'] = writeCmds.join('\n')
@@ -156,7 +163,9 @@ export function collect(agent, limit = 1200) {
   // "Said it, didn't do it": the claim sits in the reply, the proof has to sit in the facts.
   const asstText = facts['text.assistant']
   facts['claim.memory'] = /记(进|入|到|下)了?(卡|档)|写进.{0,6}(记忆|卡片?)|已落卡|落卡了/.test(asstText)
-  facts['claim.run'] = /(跑|核|验)(过|完)了|门禁(过|通)|校验通过/.test(asstText)
+  facts['claim.run'] = /(跑|核|验)(过|完)了|门禁(过|通)|校验通过|已核对|对上了|复核无误|已验证|经核对一致/.test(asstText)
+  // 我报出来的卡名，用来核对「说了写哪张卡」和「实际改了哪张卡」是否对得上
+  facts['claim.memoryNames'] = Array.from(new Set(asstText.match(/[A-Za-z0-9_\-\u4e00-\u9fa5]+\.md/g) || []))
   return facts
 }
 
@@ -201,8 +210,9 @@ export async function apply(ctx, config = {}) {
     let flat
     try {
       const probe = probeWorkspace(settings.workspace, now)
-      flat = flatten(collect(agent), probe, now)
       const mem = probeRecentWrites(settings.memoryDir, now, 60)
+      probe.memory = { names: mem.names }
+      flat = flatten(collect(agent), probe, now)
       flat['memory.writes60'] = mem.count
       flat['memory.names'] = mem.names.join(',')
     } catch {

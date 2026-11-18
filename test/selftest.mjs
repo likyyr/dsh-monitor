@@ -25,7 +25,7 @@ function ok(name, fn) {
 }
 
 /** Build a flat facts object the way index.js would. */
-function facts({ tools = {}, userText = '', commands = '', writePaths = '', writesRecent = '', writesAfterUser = 0, question = false, assistant = '', ageMin = 0, progress = null, raw = { count: 0, totalBytes: 0, maxBytes: 0 }, firstUserAt = null, lastQQAt = null, cmd = {} } = {}) {
+function facts({ tools = {}, userText = '', commands = '', writePaths = '', writesRecent = '', writesAfterUser = 0, question = false, assistant = '', ageMin = 0, progress = null, raw = { count: 0, totalBytes: 0, maxBytes: 0 }, firstUserAt = null, lastQQAt = null, cmd = {}, cmdNow = {} } = {}) {
   const now = Date.now()
   const base = {
     'calls.byTool': Object.create(null),
@@ -51,6 +51,7 @@ function facts({ tools = {}, userText = '', commands = '', writePaths = '', writ
   }
   base['calls.total'] = total
   base.cmd = { ...cmd }
+  base.cmdNow = { ...cmdNow }
   const probe = {
     progress: progress === null
       ? { exists: false, size: 0, mtime: 0, text: '' }
@@ -148,7 +149,7 @@ ok('E6 命中：声称核过但无验证脚本', () => {
   assert.equal(test(e6.when, flat), true)
 })
 ok('E6 不误报：跑过 verify_workbook', () => {
-  const flat = facts({ tools: { pwsh: 12 }, assistant: '门禁过了', cmd: { verify_workbook: 1 } })
+  const flat = facts({ tools: { pwsh: 12 }, assistant: '门禁过了', cmdNow: { verify_workbook: 1 } })
   flat['claim.run'] = true
   assert.equal(test(e6.when, flat), false)
 })
@@ -210,7 +211,7 @@ ok('G2 本轮改过 xlsx 且没跑 check_xlsx_style → 命中；跑过不报', 
   assert.ok(g2)
   const base = { tools: { write: 3, pwsh: 6 }, writesRecent: 'E:\\a\\材料摊销表.xlsx' }
   assert.equal(test(g2.when, facts(base)), true)
-  assert.equal(test(g2.when, facts({ ...base, cmd: { check_xlsx: 1 } })), false)
+  assert.equal(test(g2.when, facts({ ...base, cmdNow: { check_xlsx: 1 } })), false)
 })
 ok('G2 不再拿整场历史误报', () => {
   const g2 = doc.rules.find((r) => r.id === 'G2')
@@ -227,6 +228,65 @@ ok('G5 改了插件没重启 → 命中；命令行里重启过不报', () => {
 ok('规则清单含 G1~G7', () => {
   const ids = doc.rules.map((r) => r.id)
   for (const id of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) assert.ok(ids.includes(id), id)
+})
+
+/* 12 — 2026-11-18 堵漏：本轮判定 / 报卡名 / 吞错误 */
+ok('E7 报了卡名但那张卡没改 → 命中；对得上不报', () => {
+  const e7 = doc.rules.find((r) => r.id === 'E7')
+  assert.ok(e7)
+  const flat = facts({ assistant: '已写进记忆卡 foo-card.md' })
+  flat['claim.memory'] = true
+  flat['claim.memoryUnbacked'] = 1
+  assert.equal(test(e7.when, flat), true)
+  flat['claim.memoryUnbacked'] = 0
+  assert.equal(test(e7.when, flat), false)
+})
+ok('A4 旧进度文件不算数（不是这轮建的）', () => {
+  const a4 = doc.rules.find((r) => r.id === 'A4')
+  const now = Date.now()
+  // 进度文件 120 分钟前写的，本轮 2 分钟前才开始 → byMe=false → 命中
+  const stale = facts({ tools: { read: 25 }, progress: 3000, ageMin: 120, firstUserAt: now - 2 * 60000 })
+  assert.equal(test(a4.when, stale), true)
+  // 本轮新建 → byMe=true → 不报
+  const fresh = facts({ tools: { read: 25 }, progress: 3000, ageMin: 1, firstUserAt: now - 5 * 60000 })
+  assert.equal(test(a4.when, fresh), false)
+})
+ok('C2 抓 2>/dev/null 与 || echo', () => {
+  const c2 = doc.rules.find((r) => r.id === 'C2')
+  assert.equal(test(c2.when, facts({ commands: 'python check_xlsx_formula_refs.py x.xlsx 2>/dev/null' })), true)
+  assert.equal(test(c2.when, facts({ commands: 'python check_xlsx_style.py x.xlsx || echo skip' })), true)
+  assert.equal(test(c2.when, facts({ commands: 'python check_xlsx_style.py x.xlsx' })), false)
+})
+ok('G2 用本轮计数：上一轮跑过不再放行', () => {
+  const g2 = doc.rules.find((r) => r.id === 'G2')
+  const base = { tools: { write: 3, pwsh: 6 }, writesRecent: 'E:\\a\\表.xlsx' }
+  // 上一轮跑过（cmd 有、cmdNow 没有）→ 仍应命中
+  assert.equal(test(g2.when, facts({ ...base, cmd: { check_xlsx: 2 } })), true)
+  // 本轮跑过 → 不报
+  assert.equal(test(g2.when, facts({ ...base, cmd: { check_xlsx: 2 }, cmdNow: { check_xlsx: 1 } })), false)
+})
+
+ok('B8 不拿别人的旧进度文件误报', () => {
+  const b8 = doc.rules.find((r) => r.id === 'B8')
+  const now = Date.now()
+  const stale = facts({ tools: { read: 12 }, progress: 3000, ageMin: 90, firstUserAt: now - 5 * 60000 })
+  assert.equal(test(b8.when, stale), false)
+  const mine = facts({ tools: { read: 12 }, progress: 3000, ageMin: 90, firstUserAt: now - 120 * 60000 })
+  assert.equal(test(b8.when, mine), true)
+})
+ok('D7 有 GUI 分支：会话 30 分钟只回一句就催', () => {
+  const d7 = doc.rules.find((r) => r.id === 'D7')
+  const flat = facts({ tools: { read: 40 }, assistant: '好', ageMin: 0 })
+  flat['elapsedMin'] = 30
+  flat['replies.count'] = 1
+  assert.equal(test(d7.when, flat), true)
+  flat['replies.count'] = 5
+  assert.equal(test(d7.when, flat), false)
+})
+ok('E4 只看本轮写入（历史改插件不误报）', () => {
+  const e4 = doc.rules.find((r) => r.id === 'E4')
+  assert.equal(test(e4.when, facts({ writePaths: 'E:\\x\\_tools\\监工规则.json' })), false)
+  assert.equal(test(e4.when, facts({ writesRecent: 'E:\\x\\_tools\\监工规则.json' })), true)
 })
 
 console.log(`\n通过 ${pass} / ${pass + fail}`)

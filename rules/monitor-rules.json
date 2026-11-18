@@ -1,7 +1,7 @@
 {
-  "version": 4,
+  "version": 5,
   "updated": "2026-11-18",
-  "note": "L1 监工规则清单。改这个文件即可增删改规则，插件下一个 step 自动重载，不用重装重启。v2 把事实收窄到「当前任务」并区分读写，修掉 v1 的历史消息误报。 | 2026-11-18：maxInjections=0 表示不限次数；D6 改用 replies.count（GUI 会话不发 QQ 也能判）；B5 加 once。 | 2026-11-18 新增 G1~G7：问句先答、xlsx 格式门禁、xlsx 换路重算、docx 目视、改插件没重启、收尾清场、口径自定。",
+  "note": "L1 监工规则清单。改这个文件即可增删改规则，插件下一个 step 自动重载，不用重装重启。v2 把事实收窄到「当前任务」并区分读写，修掉 v1 的历史消息误报。 | 2026-11-18：maxInjections=0 表示不限次数；D6 改用 replies.count（GUI 会话不发 QQ 也能判）；B5 加 once。 | 2026-11-18 v5（+raw/progress 归属、D7 GUI 分支）：A1/A4/E6/G2~G4 改按「本轮」判定；新增 E7（报卡名核对）；C2 补吞错误写法。",
   "defaults": {
     "cooldownMs": 1200000,
     "maxInjections": 0,
@@ -25,7 +25,12 @@
     "hasTool": "是否调用过某工具，value 为工具名",
     "writes.afterUser": "最近一条用户消息之后写文件（含命令行写）的次数",
     "lastUser.question": "用户最近一条消息是不是问句（问号或能不能/怎么/是不是这类）",
-    "text.writesRecent": "本轮（最近一条用户消息之后）写过的文件路径或命令行"
+    "text.writesRecent": "本轮（最近一条用户消息之后）写过的文件路径或命令行",
+    "cmdNow.<name>": "本轮（最近一条用户消息之后）跑过的脚本次数，用来看「这次真跑了没有」",
+    "progress.byMe": "进度文件是不是这一轮建的（别人的旧文件不算）",
+    "claim.memoryNames": "回复里报出来的卡文件名",
+    "claim.memoryUnbacked": "报出来但 60 分钟内没改动过的卡数",
+    "raw.byMe": "今日 _tmp/raw 里有没有这一轮写的文件"
   },
   "rules": [
     {
@@ -39,7 +44,7 @@
             "value": "编表|台账|摊销|算量|报价|核量|文书|对账|结算|出个报告|写份|起草"
           },
           {
-            "fact": "cmd.workbrief",
+            "fact": "cmdNow.workbrief",
             "op": "==",
             "value": 0
           },
@@ -63,13 +68,13 @@
             "value": 20
           },
           {
-            "fact": "progress.exists",
+            "fact": "progress.byMe",
             "op": "==",
             "value": false
           }
         ]
       },
-      "say": "A4：调用 20 次了，还没有 _tmp\\进度-<今天>.md，先建。"
+      "say": "A4：调用 20 次了，还没有**这轮**建的 _tmp\\进度-<今天>.md（别人的旧文件不算），先建。"
     },
     {
       "id": "A5",
@@ -77,7 +82,7 @@
       "when": {
         "all": [
           {
-            "fact": "progress.exists",
+            "fact": "progress.byMe",
             "op": "==",
             "value": true
           },
@@ -101,19 +106,24 @@
             "value": 3
           },
           {
-            "fact": "raw.count",
+            "fact": "raw.byMe",
             "op": "==",
-            "value": 0
+            "value": false
           }
         ]
       },
-      "say": "B1：抓了几次外网还没往 _tmp\\raw 落盘。"
+      "say": "B1：抓了几次外网，这一轮还没往 _tmp/raw 落盘（别人落的盘不算）。"
     },
     {
       "id": "B2",
       "sev": 2,
       "when": {
         "all": [
+          {
+            "fact": "raw.byMe",
+            "op": "==",
+            "value": true
+          },
           {
             "fact": "raw.count",
             "op": ">=",
@@ -169,9 +179,9 @@
       "when": {
         "all": [
           {
-            "fact": "calls.total",
-            "op": ">=",
-            "value": 10
+            "fact": "progress.byMe",
+            "op": "==",
+            "value": true
           },
           {
             "fact": "progress.ageMin",
@@ -190,11 +200,11 @@
           {
             "fact": "text.commandsWrite",
             "op": "matches",
-            "value": "check_[a-z_]+\\.py.*\\|\\|\\s*true|check_[a-z_]+\\.py.*2>\\$null"
+            "value": "check_[a-z_]+\\.py.*(\\|\\|\\s*(true|echo)|2>\\s*(\\/dev\\/null|\\$null))|set\\s+\\+e|try\\s*\\{\\s*\\}\\s*catch"
           }
         ]
       },
-      "say": "C2：门禁命令带 ||true 或吞错误，等于没跑。"
+      "say": "C2：门禁命令带 || echo / 2>/dev/null / set +e，等于没跑；出错要让它报错。"
     },
     {
       "id": "D1",
@@ -230,7 +240,7 @@
       "when": {
         "all": [
           {
-            "fact": "text.writePaths",
+            "fact": "text.writesRecent",
             "op": "matches",
             "value": "\\\\.dsh\\\\sessions"
           }
@@ -280,20 +290,43 @@
       "id": "D7",
       "sev": 2,
       "when": {
-        "all": [
+        "any": [
           {
-            "fact": "cmd.qq_notify",
-            "op": ">=",
-            "value": 1
+            "all": [
+              {
+                "fact": "cmd.qq_notify",
+                "op": ">=",
+                "value": 1
+              },
+              {
+                "fact": "sinceQQMin",
+                "op": ">",
+                "value": 25
+              }
+            ]
           },
           {
-            "fact": "sinceQQMin",
-            "op": ">",
-            "value": 25
+            "all": [
+              {
+                "fact": "elapsedMin",
+                "op": ">",
+                "value": 25
+              },
+              {
+                "fact": "replies.count",
+                "op": "<=",
+                "value": 2
+              },
+              {
+                "fact": "calls.total",
+                "op": ">=",
+                "value": 25
+              }
+            ]
           }
         ]
       },
-      "say": "D7：25 分钟没报进度了。"
+      "say": "D7：25 分钟没报进度了（QQ 或对话都算），说一句到哪了。"
     },
     {
       "id": "E3",
@@ -325,7 +358,7 @@
       "when": {
         "all": [
           {
-            "fact": "text.writePaths",
+            "fact": "text.writesRecent",
             "op": "matches",
             "value": "监工规则\\.json|dsh-monitor\\\\|discipline_audit\\.js"
           }
@@ -382,7 +415,7 @@
             "value": 10
           },
           {
-            "fact": "cmd.checkAny",
+            "fact": "cmdNow.checkAny",
             "op": "==",
             "value": 0
           }
@@ -420,7 +453,7 @@
             "value": "\\.xlsx"
           },
           {
-            "fact": "cmd.check_xlsx",
+            "fact": "cmdNow.check_xlsx",
             "op": "==",
             "value": 0
           },
@@ -449,7 +482,7 @@
             "value": true
           },
           {
-            "fact": "cmd.verify_workbook",
+            "fact": "cmdNow.verify_workbook",
             "op": "==",
             "value": 0
           },
@@ -473,7 +506,7 @@
             "value": "\\.docx"
           },
           {
-            "fact": "cmd.docx2pdf",
+            "fact": "cmdNow.docx2pdf",
             "op": "==",
             "value": 0
           },
@@ -550,6 +583,25 @@
         ]
       },
       "say": "G7：口径是你自己定的——列【事由+口径+差异+影响+请确认】给用户，别默默选。"
+    },
+    {
+      "id": "E7",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "claim.memory",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "claim.memoryUnbacked",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "say": "E7：你说写进了某张卡，但那张卡 60 分钟内没有改动记录——报的卡名和真写的对不上。"
     }
   ]
 }
