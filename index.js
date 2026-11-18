@@ -59,7 +59,7 @@ export function collect(agent, limit = 1200) {
   const SCRIPT_KEYS = [
     'qq_notify', 'workbrief', 'plugin_preflight', 'verify_workbook', 'discipline_audit',
     'check_xlsx', 'check_all_tables', 'check_cost_links', 'check_t89', 'fmt_check',
-    'docx2pdf', 'closure_check', 'sysop_precheck',
+    'docx2pdf', 'closure_check', 'sysop_precheck', 'check_xlsx_style', 'dsh-restart',
   ]
   const cmdCounts = Object.create(null)
   const writeCmds = []
@@ -70,6 +70,9 @@ export function collect(agent, limit = 1200) {
   /** 良性重定向不算写：2>/dev/null、>/dev/null、2>&1、2>$null（2026-11-18 修 D2 误报） */
   const BENIGN_REDIRECT = /[12]?>\s*(\/dev\/null|\$null)|2>&1/g
   let seenWrite = false
+  let seenUser = false
+  let writesAfterUser = 0
+  const writesRecent = []
   let total = 0
   const seqEnd = Number(agent?.session?.seq ?? 0)
   const start = Math.max(0, seqEnd - limit)
@@ -94,6 +97,15 @@ export function collect(agent, limit = 1200) {
         : ''
       /** 命令行里写文件（heredoc / > / cp / tee / Set-Content…）也算写过，2026-11-18 修 B3 误报 */
       const isShellWrite = Boolean(commandText) && WRITE_VERB.test(commandText.replace(BENIGN_REDIRECT, ' '))
+      if (!seenUser && (toolName === 'write' || toolName === 'edit' || toolName === 'apply_patch' || isShellWrite)) {
+        writesAfterUser += 1
+        if (writesRecent.length < 20) {
+          const target = isShell
+            ? commandText
+            : String(typeof args === 'string' ? args : (args?.file_path ?? args?.path ?? ''))
+          if (target) writesRecent.push(target)
+        }
+      }
       if (!seenWrite) {
         if (toolName === 'write' || toolName === 'edit' || toolName === 'apply_patch' || isShellWrite) seenWrite = true
         else facts['calls.sinceWrite'] += 1
@@ -114,6 +126,7 @@ export function collect(agent, limit = 1200) {
         if (String(target).includes('进度-')) facts.lastProgressWriteAt = t
       }
     } else if (event.type === 'user/message') {
+      seenUser = true
       for (const text of textsOf(event.data)) {
         if (facts.userLast === undefined) facts.userLast = text
         if (userParts.length < 5) userParts.push(text)
@@ -137,6 +150,9 @@ export function collect(agent, limit = 1200) {
   facts['text.userAll'] = userParts.join('\n')
   facts['text.commands'] = cmdParts.join('\n')
   facts['text.assistant'] = asstParts.join('\n')
+  facts['writes.afterUser'] = writesAfterUser
+  facts['text.writesRecent'] = writesRecent.join('\n')
+  facts['lastUser.question'] = /[?？]|能不能|可不可以|行不行|要不要|是不是该|你看呢|你觉得/.test(String(facts['text.userLast'] || ''))
   // "Said it, didn't do it": the claim sits in the reply, the proof has to sit in the facts.
   const asstText = facts['text.assistant']
   facts['claim.memory'] = /记(进|入|到|下)了?(卡|档)|写进.{0,6}(记忆|卡片?)|已落卡|落卡了/.test(asstText)

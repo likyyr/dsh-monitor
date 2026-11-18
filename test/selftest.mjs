@@ -25,7 +25,7 @@ function ok(name, fn) {
 }
 
 /** Build a flat facts object the way index.js would. */
-function facts({ tools = {}, userText = '', commands = '', writePaths = '', assistant = '', ageMin = 0, progress = null, raw = { count: 0, totalBytes: 0, maxBytes: 0 }, firstUserAt = null, lastQQAt = null, cmd = {} } = {}) {
+function facts({ tools = {}, userText = '', commands = '', writePaths = '', writesRecent = '', writesAfterUser = 0, question = false, assistant = '', ageMin = 0, progress = null, raw = { count: 0, totalBytes: 0, maxBytes: 0 }, firstUserAt = null, lastQQAt = null, cmd = {} } = {}) {
   const now = Date.now()
   const base = {
     'calls.byTool': Object.create(null),
@@ -37,6 +37,9 @@ function facts({ tools = {}, userText = '', commands = '', writePaths = '', assi
     'text.commandsWrite': commands,
     'text.writePaths': writePaths,
     'text.assistant': assistant,
+    'text.writesRecent': writesRecent,
+    'writes.afterUser': writesAfterUser,
+    'lastUser.question': question || /[?？]|能不能|可不可以|行不行|要不要|是不是该|你看呢|你觉得/.test(userText),
     firstUserAt,
     lastQQAt,
   }
@@ -192,6 +195,38 @@ ok('D6 用 replies.count：有回复就不报', () => {
 ok('D6 不再依赖 cmd.qq_notify', () => {
   const d6 = doc.rules.find((r) => r.id === 'D6')
   assert.ok(!JSON.stringify(d6.when).includes('qq_notify'))
+})
+
+/* 11 — 2026-11-18 新增 G 组 */
+ok('G1 问句 + 本轮动了文件 → 命中；非问句不报', () => {
+  const g1 = doc.rules.find((r) => r.id === 'G1')
+  assert.ok(g1)
+  assert.equal(test(g1.when, facts({ userText: '你看这样行不行？', writesAfterUser: 1 })), true)
+  assert.equal(test(g1.when, facts({ userText: '按这个做', writesAfterUser: 1 })), false)
+  assert.equal(test(g1.when, facts({ userText: '能不能改一下', writesAfterUser: 0 })), false)
+})
+ok('G2 本轮改过 xlsx 且没跑 check_xlsx_style → 命中；跑过不报', () => {
+  const g2 = doc.rules.find((r) => r.id === 'G2')
+  assert.ok(g2)
+  const base = { tools: { write: 3, pwsh: 6 }, writesRecent: 'E:\\a\\材料摊销表.xlsx' }
+  assert.equal(test(g2.when, facts(base)), true)
+  assert.equal(test(g2.when, facts({ ...base, cmd: { check_xlsx: 1 } })), false)
+})
+ok('G2 不再拿整场历史误报', () => {
+  const g2 = doc.rules.find((r) => r.id === 'G2')
+  // writePaths 有旧 xlsx、但本轮没写 → 不报
+  assert.equal(test(g2.when, facts({ tools: { write: 3, pwsh: 6 }, writePaths: 'E:\\a\\旧.xlsx' })), false)
+})
+ok('G5 改了插件没重启 → 命中；命令行里重启过不报', () => {
+  const g5 = doc.rules.find((r) => r.id === 'G5')
+  assert.ok(g5)
+  const paths = 'E:\\deepseekwork\\_tools\\dsh-monitor\\index.js'
+  assert.equal(test(g5.when, facts({ writesRecent: paths, commands: 'node test/selftest.mjs' })), true)
+  assert.equal(test(g5.when, facts({ writesRecent: paths, commands: '"C:/bin/dsh-restart.cmd" run' })), false)
+})
+ok('规则清单含 G1~G7', () => {
+  const ids = doc.rules.map((r) => r.id)
+  for (const id of ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']) assert.ok(ids.includes(id), id)
 })
 
 console.log(`\n通过 ${pass} / ${pass + fail}`)

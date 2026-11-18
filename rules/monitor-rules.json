@@ -1,7 +1,7 @@
 {
-  "version": 3,
+  "version": 4,
   "updated": "2026-11-18",
-  "note": "L1 监工规则清单。改这个文件即可增删改规则，插件下一个 step 自动重载，不用重装重启。v2 把事实收窄到「当前任务」并区分读写，修掉 v1 的历史消息误报。 | 2026-11-18：maxInjections=0 表示不限次数；D6 改用 replies.count（GUI 会话不发 QQ 也能判）；B5 加 once。",
+  "note": "L1 监工规则清单。改这个文件即可增删改规则，插件下一个 step 自动重载，不用重装重启。v2 把事实收窄到「当前任务」并区分读写，修掉 v1 的历史消息误报。 | 2026-11-18：maxInjections=0 表示不限次数；D6 改用 replies.count（GUI 会话不发 QQ 也能判）；B5 加 once。 | 2026-11-18 新增 G1~G7：问句先答、xlsx 格式门禁、xlsx 换路重算、docx 目视、改插件没重启、收尾清场、口径自定。",
   "defaults": {
     "cooldownMs": 1200000,
     "maxInjections": 0,
@@ -22,7 +22,10 @@
     "text.commandsWrite": "最近 20 条带写入动词的命令",
     "text.writePaths": "最近 20 个 write/edit 的目标路径",
     "text.assistant": "助手回复文本（最近部分）",
-    "hasTool": "是否调用过某工具，value 为工具名"
+    "hasTool": "是否调用过某工具，value 为工具名",
+    "writes.afterUser": "最近一条用户消息之后写文件（含命令行写）的次数",
+    "lastUser.question": "用户最近一条消息是不是问句（问号或能不能/怎么/是不是这类）",
+    "text.writesRecent": "本轮（最近一条用户消息之后）写过的文件路径或命令行"
   },
   "rules": [
     {
@@ -386,6 +389,167 @@
         ]
       },
       "say": "E6：你说跑过 / 核过 / 门禁过了，这场会话里却没有任何验证脚本调用 —— 补跑，或把话改成待核。"
+    },
+    {
+      "id": "G1",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "lastUser.question",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "writes.afterUser",
+            "op": ">=",
+            "value": 1
+          }
+        ]
+      },
+      "say": "G1：这是问句（能不能/怎么/是不是…），先回答，别直接改文件跑脚本。"
+    },
+    {
+      "id": "G2",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.writesRecent",
+            "op": "matches",
+            "value": "\\.xlsx"
+          },
+          {
+            "fact": "cmd.check_xlsx",
+            "op": "==",
+            "value": 0
+          },
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 8
+          }
+        ]
+      },
+      "say": "G2：改过 xlsx 但没跑 check_xlsx_style.py——加行要整行搬格式，0 告警才算过。"
+    },
+    {
+      "id": "G3",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.writesRecent",
+            "op": "matches",
+            "value": "\\.xlsx"
+          },
+          {
+            "fact": "claim.run",
+            "op": "==",
+            "value": true
+          },
+          {
+            "fact": "cmd.verify_workbook",
+            "op": "==",
+            "value": 0
+          },
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 10
+          }
+        ]
+      },
+      "say": "G3：说了核过，但没跑 verify_workbook/换路重算——数字两条路对上再报。"
+    },
+    {
+      "id": "G4",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.writesRecent",
+            "op": "matches",
+            "value": "\\.docx"
+          },
+          {
+            "fact": "cmd.docx2pdf",
+            "op": "==",
+            "value": 0
+          },
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 12
+          }
+        ]
+      },
+      "say": "G4：改过 docx，还没转图看版面（docx2pdf.py --png）。断页、签字表跑末页只有看图才发现。"
+    },
+    {
+      "id": "G5",
+      "sev": 1,
+      "when": {
+        "all": [
+          {
+            "fact": "text.writesRecent",
+            "op": "matches",
+            "value": "dsh-monitor\\\\(index|rules)\\.js|profiles.*cordis\\.patch\\.yml"
+          },
+          {
+            "not": {
+              "fact": "text.commands",
+              "op": "matches",
+              "value": "dsh-restart|restart-dsh|重启 DSH"
+            }
+          }
+        ]
+      },
+      "say": "G5：改了插件代码或 profile 配置，还没重启——不重启等于没改。"
+    },
+    {
+      "id": "G6",
+      "sev": 2,
+      "once": true,
+      "when": {
+        "all": [
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 60
+          },
+          {
+            "fact": "cmd.closure_check",
+            "op": "==",
+            "value": 0
+          }
+        ]
+      },
+      "say": "G6：这么长了还没跑 closure_check.py——收尾要报「清了什么、留了什么」。"
+    },
+    {
+      "id": "G7",
+      "sev": 2,
+      "when": {
+        "all": [
+          {
+            "fact": "text.assistant",
+            "op": "matches",
+            "value": "我按.{0,12}口径|默认按|暂按|假定|先按.{0,8}处理"
+          },
+          {
+            "fact": "lastUser.question",
+            "op": "==",
+            "value": false
+          },
+          {
+            "fact": "calls.total",
+            "op": ">=",
+            "value": 8
+          }
+        ]
+      },
+      "say": "G7：口径是你自己定的——列【事由+口径+差异+影响+请确认】给用户，别默默选。"
     }
   ]
 }

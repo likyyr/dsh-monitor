@@ -1,6 +1,6 @@
 {
   "name": "dsh-monitor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "L1 rule-based supervisor for DeepSeek Harness: injects one contextual reminder before an agent step when a discipline rule fires (silent when nothing fires)",
   "type": "module",

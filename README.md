@@ -18,7 +18,7 @@ DSH 插件：在每个 agent step（一次工具调用结束、下一次思考�
 | `test/selftest.mjs` | 自测 19 条（判定、冷却、次数、once、D6 判据） |
 | `tools/verify-backup.py` | 核对 GitHub 备份与本地是否逐字节一致：`python tools/verify-backup.py --clone`（真克隆一遍再删） |
 | `docs/DETAIL.md` | 详细说明：规则写法、可用事实、配置项、边界 |
-| `rules/monitor-rules.json` | 规则清单范本（20 条），运行时可指向任意路径（仓库里用 ASCII 名，避免跨平台文件名编码问题） |
+| `rules/monitor-rules.json` | 规则清单范本（27 条），运行时可指向任意路径（仓库里用 ASCII 名，避免跨平台文件名编码问题） |
 
 ## 装法
 
@@ -83,6 +83,8 @@ DSH 插件：在每个 agent step（一次工具调用结束、下一次思考�
 | `date.crossedMidnight` | 会话起始日与今天是否不同 |
 | `text.userLast` / `text.userAll` / `text.commands` / `text.assistant` | 最近一条用户消息 / 全部用户消息 / 命令行 / 助手回复合并文本 |
 | `text.commandsWrite` / `text.writePaths` | 命令里像写的片段 / 写过的路径 |
+| `writes.afterUser` / `text.writesRecent` | 最近一条用户消息之后写了几次 / 写过哪些路径（只看本轮，避免历史误报） |
+| `lastUser.question` | 用户最近一条是不是问句（问号或「能不能/怎么/是不是/你看呢」这类） |
 | `claim.memory` / `claim.run` | 助手回复里是否声称"记卡了""跑过了" |
 | `hasTool` | 特殊节点：`{"fact":"hasTool","value":"subagent"}` 判是否用过 |
 
@@ -110,8 +112,21 @@ DSH 插件：在每个 agent step（一次工具调用结束、下一次思考�
 | 2 | D6 | 12 次调用还没吭声（按 `replies.count` 判） |
 | 2 | D7 | 25 分钟没报进度（按 `qq_notify` 判） |
 | 2 | E6 | 说跑过/核过，这场会话却没有任何验证调用 |
+| 1 | G1 | 用户这轮在问（「能不能/怎么/是不是」），却已经动手写文件 |
+| 1 | G2 | 本轮改过 xlsx，没跑 `check_xlsx_style.py`（加行要整行搬格式） |
+| 1 | G3 | 本轮改过 xlsx 且声称核过，没跑 `verify_workbook.py` |
+| 1 | G4 | 本轮改过 docx，没转图看版面（`docx2pdf.py --png`） |
+| 1 | G5 | 改了插件代码 / profile 配置，没重启 |
+| 2 | G6 | 60 次调用还没跑 `closure_check.py`（收尾清场） |
+| 2 | G7 | 口径自己定了却没交给用户确认 |
 
 ## 更新记录
+
+- **v0.2.1（2026-11-18）**
+  - 新增 7 条规则 G1~G7：问句先答、xlsx 格式门禁、xlsx 换路重算、docx 目视检查、改插件必须重启、收尾清场、口径不自己定
+  - 新增事实 `writes.afterUser`、`text.writesRecent`、`lastUser.question`——G2~G5 只看**本轮**写入，不吃历史（上线当天就误报过一次，当场收窄）
+  - 脚本名统计补 `check_xlsx_style`、`dsh-restart`
+  - 自测 24/24
 
 - **v0.1.1（2026-11-18）**
   - `maxInjections: 0`＝不限次数（原来固定 8 次，长会话会提前闭嘴）
