@@ -134,6 +134,9 @@ export function collect(agent, limit = 1200) {
     } else if (event.type === 'user/message') {
       seenUser = true
       for (const text of textsOf(event.data)) {
+        // 记忆注入、系统提醒也走 user/message，但它们是「上下文」不是用户说的话：
+        // 拿它们判业务关键词（A1）或问句（G1）会误报——2026-11-18 台账里抓到的第一例。
+        if (/^\s*<system-reminder>/.test(text) || text.includes('以下是与你当前问题相关的历史记忆')) continue
         if (facts.userLast === undefined) facts.userLast = text
         if (userParts.length < 5) userParts.push(text)
       }
